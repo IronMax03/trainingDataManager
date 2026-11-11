@@ -43,7 +43,7 @@ erDiagram
 
     PATIENT {
         int patient_id PK
-        char sex "clinical: F, M or U"
+        char sex "clinical: F, M"
         text raw_file_path "one parquet per patient"
     }
     PATIENT_IDENTITY {
