@@ -1,3 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "trainingDataManager"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = []   # libraries are listed in requirements.txt
+
+[project.scripts]
+tdm = "tdm.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tdm"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]

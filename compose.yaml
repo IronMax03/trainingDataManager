@@ -1,0 +1,11 @@
+# Throwaway PostgreSQL for the automated tests only. The tests never touch the shared Neon database.
+# Start: docker compose up -d      Stop (and wipe): docker compose down
+services:
+  test-db:
+    image: postgres:18   # same major version as Neon
+    environment:
+      POSTGRES_PASSWORD: postgres   # local test database only, not a real secret
+    ports:
+      - "127.0.0.1:5433:5432"
+    tmpfs:
+      - /var/lib/postgresql   # data lives in memory and disappears when stopped
