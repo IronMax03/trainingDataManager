@@ -29,13 +29,7 @@ def main() -> int:
 
     with conn:
         print(f"Logged in as {user} ({project_role(conn)}). Type help to see the commands.")
-        shell = Shell(conn)
-        while True:
-            try:
-                shell.cmdloop()
-                break
-            except KeyboardInterrupt:   # Ctrl+C clears the line instead of quitting, like psql
-                print()
+        Shell(conn).run()
 
     return 0
 
