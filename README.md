@@ -32,6 +32,8 @@ Install the `tdm` command once, inside the virtual environment:
 pip install -e .
 tdm
 ```
+`tdm` takes the database address from `DATABASE_URL` in `.env`, then asks for your own PostgreSQL username and password (the ones inside the URL are not used). Type `help` to see the commands.
+
 What the CLI needs from the database, the .edf conversion and Hugging Face: [docs/cli-interfaces.md](docs/cli-interfaces.md).
 
 ## Running the tests
