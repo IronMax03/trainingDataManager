@@ -5,6 +5,7 @@ Anything else that looks like SQL is sent to PostgreSQL. SQL can take several li
 """
 
 import cmd
+import getpass
 from pathlib import Path
 from typing import TextIO
 
@@ -13,7 +14,7 @@ import psycopg
 from psycopg import sql
 from psycopg.pq import TransactionStatus
 
-from tdm.db import project_role
+from tdm.db import PROJECT_ROLES, project_role
 from tdm.results import format_table, save_table, to_table
 
 ISOLATION_LEVELS = ["read committed", "repeatable read", "serializable"]
@@ -101,21 +102,27 @@ class Shell(cmd.Cmd):
     # ---- Running SQL
 
     def run_sql(self, text: str) -> None:
-        """Run SQL inside a transaction: the one the user opened with begin, or else a new one
-        that is committed at the end. If anything fails, that new transaction is rolled back."""
+        cursor = self.run_in_transaction(text)
+        if cursor:
+            self.show(cursor)
+
+    def run_in_transaction(self, query: str | sql.Composable, params: list | None = None) -> psycopg.Cursor | None:
+        """Run a query inside a transaction: the one the user opened with begin, or else a new one
+        that is committed at the end. If anything fails, that new transaction is rolled back and
+        the problem is explained. Gives the result, or None if it failed."""
         own_transaction = not self.in_transaction()
         if own_transaction:
             self.conn.execute(self.begin_sql())
 
         try:
-            cursor = self.conn.execute(text)
+            cursor = self.conn.execute(query, params)
         except (psycopg.Error, KeyboardInterrupt) as problem:   # KeyboardInterrupt = Ctrl+C
             if own_transaction and self.connected():
                 self.conn.execute("ROLLBACK")
             self.report(problem)
             if own_transaction and self.connected():
                 self.say("Rolled back: nothing was saved.")
-            return
+            return None
 
         if own_transaction:
             try:
@@ -123,8 +130,8 @@ class Shell(cmd.Cmd):
             except psycopg.Error as error:   # e.g. a serializable transaction that conflicts with another
                 self.report(error)
                 self.say("Nothing was saved.")
-                return
-        self.show(cursor)
+                return None
+        return cursor
 
     def show(self, cursor: psycopg.Cursor) -> None:
         """Print each result: a table when there are rows, otherwise what PostgreSQL did ("INSERT 0 1")."""
@@ -286,6 +293,77 @@ class Shell(cmd.Cmd):
             return
         self.say(f"Saved {self.last_result.height} rows to {path}.")
 
+    # ---- Users. PostgreSQL checks who may do this: only admin may call the functions in
+    #      sql/03_user_management.sql.
+
+    def do_users(self, arg: str) -> None:
+        """List the users and their group."""
+        self.show(self.conn.execute(
+            "SELECT u.rolname AS name, g.rolname AS \"group\" FROM pg_roles u"
+            " JOIN pg_auth_members m ON m.member = u.oid"
+            " JOIN pg_roles g ON g.oid = m.roleid"
+            " WHERE u.rolcanlogin AND NOT u.rolsuper AND NOT u.rolcreaterole"   # not the database owner
+            " AND g.rolname = ANY(%s)"
+            " ORDER BY g.rolname, u.rolname",
+            [PROJECT_ROLES],
+        ))
+
+    def do_adduser(self, arg: str) -> None:
+        """Add a user, who then logs in with the password you choose (admin only). Usage: adduser <name> <group>"""
+        words = _words(arg)
+        if len(words) != 2:
+            self.say(f"Usage: adduser <name> <group>   (group: {', '.join(PROJECT_ROLES)})")
+            return
+        name, group = words
+        if group not in PROJECT_ROLES:
+            self.say(f"Choose a group: {', '.join(PROJECT_ROLES)}.")
+            return
+        password = self.new_password(f"Password for {name}: ")
+        if password:
+            self.change_users("SELECT public.create_user(%s, %s, %s)", [name, password, group], f"Added {name} to {group}.")
+
+    def do_removeuser(self, arg: str) -> None:
+        """Remove a user: they can't log in any more (admin only). Usage: removeuser <name>"""
+        words = _words(arg)
+        if len(words) != 1:
+            self.say("Usage: removeuser <name>")
+            return
+        self.change_users("SELECT public.drop_user(%s)", words, f"Removed {words[0]}.")
+
+    def do_setgroup(self, arg: str) -> None:
+        """Move a user to another group (admin only). Usage: setgroup <name> <group>"""
+        words = _words(arg)
+        if len(words) != 2:
+            self.say(f"Usage: setgroup <name> <group>   (group: {', '.join(PROJECT_ROLES)})")
+            return
+        name, group = words
+        if group not in PROJECT_ROLES:
+            self.say(f"Choose a group: {', '.join(PROJECT_ROLES)}.")
+            return
+        self.change_users("SELECT public.change_group(%s, %s)", words, f"{name} is now in {group}.")
+
+    def new_password(self, prompt: str) -> str | None:
+        """Ask for a new password twice, without showing it. It travels over the encrypted connection,
+        and PostgreSQL keeps only a hash of it. (Neon refuses passwords that are already hashed.)"""
+        try:
+            password = getpass.getpass(prompt)
+            again = getpass.getpass("Type it again: ")
+        except (EOFError, KeyboardInterrupt):   # Ctrl+D or Ctrl+C
+            self.say("\nCancelled.")
+            return None
+        if not password:
+            self.say("The password can't be empty.")
+            return None
+        if password != again:
+            self.say("The passwords don't match. Nothing changed.")
+            return None
+        return password
+
+    def change_users(self, query: str, params: list[str], done: str) -> None:
+        # The password is sent as a separate value (%s), so it never appears in the query text
+        if self.run_in_transaction(query, params):
+            self.say(done + (" It is saved when you commit." if self.in_transaction() else ""))
+
     def do_whoami(self, arg: str) -> None:
         """Show who you are logged in as, your project role, and which database you are on."""
         user = self.conn.execute("SELECT current_user").fetchone()[0]
@@ -303,3 +381,4 @@ class Shell(cmd.Cmd):
 
 def _words(arg: str) -> list[str]:
     return arg.replace(";", " ").split()
+

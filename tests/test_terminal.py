@@ -1,5 +1,6 @@
 """tdm in a real terminal, typed into like a person would (pexpect starts it and types)."""
 
+import io
 import os
 import sys
 from pathlib import Path
@@ -58,3 +59,23 @@ def test_ctrl_c_stops_a_slow_query(alice, test_db_url):
 
     child.sendeof()   # Ctrl+D
     child.expect(pexpect.EOF)
+
+
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded")
+def test_adduser_asks_the_password_without_showing_it(ada, test_db_url):
+    child = start_tdm(test_db_url, *ada)
+    screen = io.StringIO()
+    child.logfile_read = screen   # everything tdm shows from now on
+
+    child.sendline("adduser bob developer")
+    child.expect_exact("Password for bob: ")
+    child.sendline("bob-pw")
+    child.expect_exact("Type it again: ")
+    child.sendline("bob-pw")
+    child.expect_exact("Added bob to developer.")
+    child.expect_exact("tdm> ")
+    child.sendline("exit")
+    child.expect(pexpect.EOF)
+
+    assert "adduser bob developer" in screen.getvalue()   # normal typing is shown...
+    assert "bob-pw" not in screen.getvalue()              # ...the password is not

@@ -18,10 +18,16 @@ The CLI relies on:
 - Each person is their own login role and a member of exactly one group. After login, the CLI asks PostgreSQL which group the person is in.
 - People are created with SQL (`CREATE ROLE`), not in the Neon console. Users made in the console join `neon_superuser` and get near-admin powers, which would break the developer restrictions.
 
-### Open point, to settle before the CLI's user management
+### Managing users (done: `sql/03_user_management.sql`)
 Since PostgreSQL 16 (Neon runs 18), `CREATEROLE` is not inherited from a group. An admin can only put people into `developer` etc. if they hold that group `WITH ADMIN OPTION`, and can only drop users they created themselves.
 
-Proposal: three small `SECURITY DEFINER` functions owned by `neondb_owner` (`create_user(name, password, group)`, `drop_user(name)`, `change_group(name, group)`), with `EXECUTE` granted only to `admin`. PostgreSQL still decides who may manage users, and any admin can manage anyone.
+So `sql/03_user_management.sql` adds three small `SECURITY DEFINER` functions, `create_user(name, password, group)`, `drop_user(name)` and `change_group(name, group)`, with `EXECUTE` granted only to `admin`. They run with the rights of the database owner, only accept the three groups, and refuse to touch the owner, superusers or the caller's own account. PostgreSQL still decides who may manage users, and any admin can manage anyone. The CLI's `adduser`, `removeuser` and `setgroup` call them.
+
+What the roles script needs for this:
+- Create the three groups while logged in as `neondb_owner`. The owner then automatically gets `ADMIN OPTION` on them, which the functions need.
+- Then run `sql/03_user_management.sql`, also as `neondb_owner`. For example, log in to `tdm` as `neondb_owner` and type `script sql/03_user_management.sql`.
+- Make the first admin the same way: as `neondb_owner`, type `adduser <name> admin`.
+- Neon only accepts passwords in plain text in `CREATE ROLE` / `ALTER ROLE` (it hashes them itself), so don't pre-hash them.
 
 ## Converting .edf files (Python)
 

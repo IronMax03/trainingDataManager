@@ -34,6 +34,13 @@ tdm
 ```
 `tdm` takes the database address from `DATABASE_URL` in `.env`, then asks for your own PostgreSQL username and password (the ones inside the URL are not used). Type `help` to see the commands.
 
+Users are managed inside `tdm` by an admin: `users`, `adduser <name> <group>`, `setgroup <name> <group>`, `removeuser <name>` (groups: `admin`, `medical_user`, `developer`).
+
+Setting up user management on a new database (once, after the groups exist):
+1. Log in to `tdm` as `neondb_owner` (its password is in the Neon console, under Connect).
+2. Type `script sql/03_user_management.sql`.
+3. Make yourself admin: `adduser <your name> admin`. Then log in as yourself from now on.
+
 What the CLI needs from the database, the .edf conversion and Hugging Face: [docs/cli-interfaces.md](docs/cli-interfaces.md).
 
 ## Running the tests
