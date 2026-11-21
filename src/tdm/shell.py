@@ -6,6 +6,8 @@ Anything else that looks like SQL is sent to PostgreSQL. SQL can take several li
 
 import cmd
 import getpass
+import os
+from datetime import date
 from pathlib import Path
 from typing import TextIO
 
@@ -17,7 +19,30 @@ from psycopg.pq import TransactionStatus
 from tdm.db import PROJECT_ROLES, project_role
 from tdm.results import format_table, save_table, to_table
 
+try:
+    import readline  # line editing and the Up-arrow history (missing on Windows)
+except ImportError:
+    readline = None
+
 ISOLATION_LEVELS = ["read committed", "repeatable read", "serializable"]
+
+# A new patient: the clinical part in `patient`, the personal part encrypted in `patient_identity`.
+# One statement, so both rows are saved or neither. Names start with public. so that nobody's own
+# function or table with the same name is used instead (it could catch the key).
+ADD_PATIENT = """
+WITH new_patient AS (
+    INSERT INTO public.patient (sex) VALUES (%(sex)s) RETURNING patient_id
+), identity AS (
+    INSERT INTO public.patient_identity (patient_id, name_enc, address_enc, birth_date_enc, hospital_no_enc)
+    SELECT patient_id,
+           public.pgp_sym_encrypt(%(name)s, %(key)s),
+           public.pgp_sym_encrypt(%(address)s, %(key)s),
+           public.pgp_sym_encrypt(%(birth_date)s, %(key)s),
+           public.pgp_sym_encrypt(%(hospital_no)s, %(key)s)
+    FROM new_patient
+)
+SELECT patient_id FROM new_patient
+"""
 
 # First words that mark a line as SQL even before its closing ";"
 SQL_WORDS = {
@@ -42,6 +67,10 @@ class Shell(cmd.Cmd):
 
     def say(self, text: str) -> None:
         print(text, file=self.stdout)
+
+    def say_done(self, text: str) -> None:
+        """Say what was done, and that it still needs a commit if the user opened a transaction."""
+        self.say(text + (" It is saved when you commit." if self.in_transaction() else ""))
 
     # ---- Reading what the user types
 
@@ -106,7 +135,7 @@ class Shell(cmd.Cmd):
         if cursor:
             self.show(cursor)
 
-    def run_in_transaction(self, query: str | sql.Composable, params: list | None = None) -> psycopg.Cursor | None:
+    def run_in_transaction(self, query: str, params: list | dict | None = None) -> psycopg.Cursor | None:
         """Run a query inside a transaction: the one the user opened with begin, or else a new one
         that is committed at the end. If anything fails, that new transaction is rolled back and
         the problem is explained. Gives the result, or None if it failed."""
@@ -362,7 +391,71 @@ class Shell(cmd.Cmd):
     def change_users(self, query: str, params: list[str], done: str) -> None:
         # The password is sent as a separate value (%s), so it never appears in the query text
         if self.run_in_transaction(query, params):
-            self.say(done + (" It is saved when you commit." if self.in_transaction() else ""))
+            self.say_done(done)
+
+    # ---- Patients
+
+    def do_addpatient(self, arg: str) -> None:
+        """Add a patient (admin and medical_user). Their personal data is stored encrypted."""
+        allowed = self.conn.execute(
+            "SELECT has_table_privilege('public.patient', 'INSERT') AND has_table_privilege('public.patient', 'SELECT')"
+            " AND has_table_privilege('public.patient_identity', 'INSERT')"
+        ).fetchone()[0]
+        if not allowed:   # PostgreSQL would refuse the INSERT anyway: this just saves typing everything first
+            self.say("Only admins and medical users can add patients.")
+            return
+        key = os.environ.get("TDM_DATA_KEY", "")
+        if len(key) < 16:
+            self.say("Put the team's encryption key in .env as TDM_DATA_KEY (at least 16 characters, see README).")
+            return
+
+        patient = self.ask_patient()
+        if patient:
+            # The key and the personal data are sent as separate values, never inside the query text
+            cursor = self.run_in_transaction(ADD_PATIENT, {**patient, "key": key})
+            if cursor:
+                self.say_done(f"Added patient {cursor.fetchone()[0]}. Their personal data is stored encrypted.")
+
+    def ask_patient(self) -> dict | None:
+        """Ask for the patient's details. Gives them, or None if something is wrong."""
+        if readline:
+            readline.set_auto_history(False)   # keep the answers out of the Up-arrow history
+        try:
+            sex = input("Sex (F, M or U): ").strip().upper()
+            name = input("Name: ").strip()
+            address = input("Address (Enter to skip): ").strip()
+            birth_date = input("Date of birth, YYYY-MM-DD (Enter to skip): ").strip()
+            hospital_no = input("Hospital number (Enter to skip): ").strip()
+        except (EOFError, KeyboardInterrupt):   # Ctrl+D or Ctrl+C
+            self.say("\nCancelled.")
+            return None
+        finally:
+            if readline:
+                readline.set_auto_history(True)
+
+        if sex not in ("F", "M", "U"):
+            self.say("Sex must be F, M or U. Nothing was saved.")
+            return None
+        if not name:
+            self.say("The name can't be empty. Nothing was saved.")
+            return None
+        if birth_date:
+            try:
+                born = date.fromisoformat(birth_date)
+            except ValueError:
+                self.say("Write the date of birth as YYYY-MM-DD, e.g. 2012-03-04. Nothing was saved.")
+                return None
+            if born > date.today():
+                self.say("The date of birth is in the future. Nothing was saved.")
+                return None
+            birth_date = born.isoformat()
+        return {
+            "sex": sex,
+            "name": name,
+            "address": address or None,   # skipped fields stay empty (NULL)
+            "birth_date": birth_date or None,
+            "hospital_no": hospital_no or None,
+        }
 
     def do_whoami(self, arg: str) -> None:
         """Show who you are logged in as, your project role, and which database you are on."""

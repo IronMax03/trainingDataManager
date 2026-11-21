@@ -11,6 +11,7 @@ from tdm.db import PROJECT_ROLES, login, server_address
 from tdm.shell import Shell
 
 USER_FUNCTIONS = Path(__file__).parent.parent / "sql" / "03_user_management.sql"
+PLACEHOLDER_TABLES = Path(__file__).parent / "placeholder_tables.sql"
 
 # Tests use the throwaway PostgreSQL from compose.yaml, never the shared Neon database.
 TEST_DATABASE_URL = os.environ.get(
@@ -97,6 +98,26 @@ def ada(groups, test_db_url: str) -> tuple[str, str]:
 
 
 @pytest.fixture
+def dave(groups, test_db_url: str) -> tuple[str, str]:
+    """A user `dave` in the group developer."""
+    return add_user(test_db_url, "dave", "developer")
+
+
+@pytest.fixture
+def patient_tables(groups, test_db_url: str):
+    """The patient tables (stand-ins from placeholder_tables.sql, with their permissions) and pgcrypto."""
+    with psycopg.connect(test_db_url, autocommit=True) as conn:
+        conn.execute("DROP TABLE IF EXISTS patient_identity, patient")   # in case an earlier run was stopped
+        conn.execute(PLACEHOLDER_TABLES.read_text())
+
+    yield
+
+    with psycopg.connect(test_db_url, autocommit=True) as conn:
+        conn.execute("SET lock_timeout = '5s'")   # fail, don't hang, if a test left a transaction open
+        conn.execute("DROP TABLE patient_identity, patient")
+
+
+@pytest.fixture
 def open_shell(groups):
     """open_shell(user, password) logs in and gives a tdm shell. What it prints goes to shell.stdout
     (a text buffer)."""
@@ -169,4 +190,5 @@ def numbers(alice, test_db_url: str):
     yield saved
 
     with psycopg.connect(test_db_url, autocommit=True) as conn:
+        conn.execute("SET lock_timeout = '5s'")
         conn.execute("DROP TABLE numbers")

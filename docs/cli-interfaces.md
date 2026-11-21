@@ -10,7 +10,12 @@ The CLI relies on:
 - `patient.patient_id` and `recording.recording_id` being created by the database (e.g. `GENERATED ALWAYS AS IDENTITY`).
 - `recording.sha256` being `UNIQUE`, so the same .edf file can't be added twice.
 - `seizure_annotation.recording_id` having `ON DELETE CASCADE`, so removing a recording removes its seizures.
-- The personal columns of `patient_identity` being `bytea`, encrypted with pgcrypto: `pgp_sym_encrypt(value, key)`. The CLI sends the key with each query, taken from the user's `TDM_DATA_KEY` environment variable. The key is never stored in the database or the repo.
+- The personal columns of `patient_identity` being `bytea`, encrypted with pgcrypto: `pgp_sym_encrypt(value, key)` (the date of birth as `YYYY-MM-DD` text). The CLI sends the key with each query, taken from the user's `TDM_DATA_KEY` environment variable. The key is never stored in the database or the repo. `name_enc` is required; the other personal columns may be NULL.
+- `patient.raw_file_path` allowing NULL: the CLI adds a patient first and sets the path when their first recording is added.
+- `patient.sex` allowing `F`, `M` and `U` (unknown), as in the constraints list of `REQUIRENTS.md`.
+- Tables and pgcrypto in the `public` schema: the CLI writes `public.patient`, `public.pgp_sym_encrypt(...)` and so on, so that nobody's own function with the same name can catch the key.
+- `admin` and `medical_user` having `INSERT` and `SELECT` on `patient`, and `INSERT` on `patient_identity`, to add patients. Nobody gets `CREATE` on the database, for the same reason as above.
+- `CREATE EXTENSION pgcrypto` in the create script.
 - The SQL being saved in the repo as numbered files in `sql/` (`01_create.sql`, `02_roles.sql`, ...), not only typed into the Neon console. The automated tests run those files to build the same database locally, and the rubric asks for the scripts anyway.
 
 ### Users and roles
@@ -54,4 +59,4 @@ Any module name you like. The access token is read from the `HF_TOKEN` environme
 
 ## Until these exist
 
-The CLI uses stand-ins: placeholder tables in the local test database, and a local folder instead of Hugging Face. When your version lands, the CLI switches to it.
+The CLI uses stand-ins: placeholder tables in the local test database (`tests/placeholder_tables.sql`), and a local folder instead of Hugging Face. When your version lands, the CLI switches to it.
