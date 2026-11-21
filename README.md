@@ -49,7 +49,7 @@ Setting up user management on a new database (once, after the groups exist):
 
 Admins and medical users add patients with `addpatient`. It asks for the sex (stored as is, for machine learning) and the personal details: name, address, date of birth, hospital number (stored encrypted with `TDM_DATA_KEY`).
 
-What the CLI needs from the database, the .edf conversion and Hugging Face: [docs/cli-interfaces.md](docs/cli-interfaces.md).
+How the CLI works: [docs/cli.md](docs/cli.md). What it needs from the database, the .edf conversion and Hugging Face: [docs/cli-interfaces.md](docs/cli-interfaces.md).
 
 ## Running the tests
 Some tests need a throwaway PostgreSQL running in Docker. They never touch the Neon database.
