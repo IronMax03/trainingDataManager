@@ -1,18 +1,16 @@
 from typing_extensions import Tuple, List
 from pathlib import Path
 import polars as pl
-import yaml
+
+from config_manager import ConfigManager
 
 
 class DataProcessor:
-    def __init__(self, configPath:str | Path = "../configs/DataProcessor.yaml") -> None:
-        with open(configPath) as file:
-            conf = yaml.safe_load(file)
+    def __init__(self, config_name: str = "DataProcessor.yaml") -> None:
+        conf = ConfigManager(config_name)
 
         self.compression_type = conf["compression_type"]
         self.compression_level = conf["compression_level"]
-
-        del conf
 
 
     def _import_patients(self, root: Path) -> tuple[List[str], pl.DataFrame]:

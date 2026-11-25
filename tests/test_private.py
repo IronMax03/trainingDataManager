@@ -13,7 +13,7 @@ REPO = Path(__file__).parent.parent
 
 @pytest.fixture
 def processor() -> DataProcessor:
-    return DataProcessor(REPO / "configs" / "DataProcessor.yaml")
+    return DataProcessor("DataProcessor.yaml")
 
 
 @pytest.fixture
