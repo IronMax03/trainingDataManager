@@ -3,7 +3,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from DataProcessing import DataProcessor
+from utils.DataProcessing import DataProcessor
 
 IDS = ["chb01", "chb02", "chb03"]
 
