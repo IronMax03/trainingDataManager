@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from config_manager import ConfigManager, ImmutableConfigError
+from utils.config_manager import ConfigManager, ImmutableConfigError
 
 REPO = Path(__file__).parent.parent
 
