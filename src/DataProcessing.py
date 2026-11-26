@@ -2,7 +2,7 @@ from typing_extensions import Tuple, List
 from pathlib import Path
 import polars as pl
 
-from config_manager import ConfigManager
+from utils.config_manager import ConfigManager
 
 
 class DataProcessor:
@@ -91,7 +91,6 @@ class DataProcessor:
 
         df = pl.concat([pl.read_parquet(patientPath), newSignal])
         df.write_parquet(patientPath, compression=self.compression_type, compression_level=self.compression_level)
-
 
 
     def import_edf(self, path: str) -> tuple[pl.DataFrame, pl.DataFrame]:
